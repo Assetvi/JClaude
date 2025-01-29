@@ -29,7 +29,6 @@ public class AnthropicApiClient {
         "image/jpeg", "image/png", "image/gif", "image/webp"
     );
 
-
     private final String apiKey;
     private final int maxTokens;
     private final String model;
@@ -51,35 +50,60 @@ public class AnthropicApiClient {
         this.httpClient = HttpClient.newHttpClient();
     }
 
-    public String sendMessage(String message) {
-        return sendMessageWithImage(message, null);
-    }
-
-    public String sendMessageWithImage(String message, String imagePath) {
+    public void sendMessageWithStreaming(String message, String imagePath, StreamCallback callback) {
         try {
             String jsonBody = buildJsonBody(message, imagePath);
-
             HttpRequest request = buildHttpRequest(jsonBody);
-
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-
-            int statusCode = response.statusCode();
-            String errorMessage = handleErrorCode(statusCode);
-
-            if (errorMessage != null) {
-                return "Error: " + errorMessage;
-            } else {
-                return parseResponse(response.body());
-            }
+    
+            httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofLines())
+                    .thenAccept(response -> {
+                        int statusCode = response.statusCode();
+                        if (statusCode != 200) {
+                            callback.onError("Error: " + handleErrorCode(statusCode));
+                            return;
+                        }
+    
+                        response.body().forEach(line -> {
+                            try {
+                                if (!line.isEmpty() && line.startsWith("data: ")) {
+                                    // Remove "data: " prefix
+                                    line = line.substring(6).trim();
+    
+                                    JsonObject json = gson.fromJson(line, JsonObject.class);
+    
+                                    // Extract only text from `content_block_delta` events
+                                    if (json.has("type") && json.get("type").getAsString().equals("content_block_delta")) {
+                                        JsonObject delta = json.getAsJsonObject("delta");
+                                        if (delta.has("text")) {
+                                            callback.onMessage(delta.get("text").getAsString());
+                                        }
+                                    }
+                                }
+                            } catch (Exception e) {
+                                callback.onError("Error parsing JSON: " + e.getMessage());
+                            }
+                        });
+    
+                        callback.onComplete();
+                    })
+                    .exceptionally(ex -> {
+                        callback.onError("Streaming error: " + ex.getMessage());
+                        return null;
+                    });
         } catch (Exception e) {
-            return "Error: " + e.getMessage();
+            callback.onError("Error: " + e.getMessage());
         }
     }
+    
+    
+    
+    
 
     private String buildJsonBody(String message, String imagePath) throws IOException, InterruptedException {
         JsonObject jsonBody = new JsonObject();
         jsonBody.addProperty("model", model);
         jsonBody.addProperty("max_tokens", maxTokens);
+        jsonBody.addProperty("stream", true); // Enable streaming
         if (temperature != null) {
             jsonBody.addProperty("temperature", temperature);
         }
@@ -102,12 +126,14 @@ public class AnthropicApiClient {
 
         return gson.toJson(jsonBody);
     }
+
     private JsonObject createTextContent(String text) {
         JsonObject textContent = new JsonObject();
         textContent.addProperty("type", "text");
         textContent.addProperty("text", text);
         return textContent;
     }
+
     private JsonObject createImageContent(String imagePath) throws IOException, InterruptedException {
         JsonObject imageContent = new JsonObject();
         imageContent.addProperty("type", "image");
@@ -117,7 +143,6 @@ public class AnthropicApiClient {
         
         Path path = Paths.get(imagePath);
         if (Files.exists(path)) {
-            // Local file
             byte[] imageBytes = Files.readAllBytes(path);
             String base64 = Base64.getEncoder().encodeToString(imageBytes);
             String mediaType = Files.probeContentType(path);
@@ -130,36 +155,11 @@ public class AnthropicApiClient {
             source.addProperty("media_type", mediaType);
             source.addProperty("data", base64);
         } else {
-            // Assume it's a URL
-            HttpResponse<byte[]> imageResponse = httpClient.send(
-                HttpRequest.newBuilder(URI.create(imagePath)).GET().build(),
-                HttpResponse.BodyHandlers.ofByteArray()
-            );
-            
-            String mediaType = imageResponse.headers().firstValue("content-type").orElse("");
-            if (!SUPPORTED_IMAGE_TYPES.contains(mediaType)) {
-                throw new IllegalArgumentException("Unsupported image type. Supported types are: " 
-                    + String.join(", ", SUPPORTED_IMAGE_TYPES));
-            }
-            
-            String base64 = Base64.getEncoder().encodeToString(imageResponse.body());
-            
-            source.addProperty("media_type", mediaType);
-            source.addProperty("data", base64);
+            throw new IllegalArgumentException("File does not exist: " + imagePath);
         }
         
         imageContent.add("source", source);
         return imageContent;
-    }
-
-    private String parseResponse(String jsonResponse) {
-        try {
-            JsonObject json = gson.fromJson(jsonResponse, JsonObject.class);
-            JsonObject content = json.getAsJsonArray("content").get(0).getAsJsonObject();
-            return content.get("text").getAsString();
-        } catch (Exception e) {
-            return "Error parsing JSON: " + e.getMessage();
-        }
     }
 
     private HttpRequest buildHttpRequest(String jsonBody) {
@@ -173,25 +173,21 @@ public class AnthropicApiClient {
     }
 
     private String handleErrorCode(int statusCode) {
-        switch (statusCode) {
-            case 200:
-                return null; // Successful request
-            case 400:
-                return "Invalid request error: There was an issue with the format or content of your request.";
-            case 401:
-                return "Authentication error: There's an issue with your API key.";
-            case 403:
-                return "Permission error: Your API key does not have permission to use the specified resource.";
-            case 404:
-                return "Not found error: The requested resource was not found.";
-            case 429:
-                return "Rate limit error: Your account has hit a rate limit.";
-            case 500:
-                return "API error: An unexpected error has occurred internal to Anthropic's systems.";
-            case 529:
-                return "Overloaded error: Anthropic's API is temporarily overloaded.";
-            default:
-                return "Unknown error: An unexpected HTTP status code was received.";
-        }
+        return switch (statusCode) {
+            case 400 -> "Invalid request error.";
+            case 401 -> "Authentication error.";
+            case 403 -> "Permission error.";
+            case 404 -> "Not found error.";
+            case 429 -> "Rate limit error.";
+            case 500 -> "API error.";
+            case 529 -> "Overloaded error.";
+            default -> "Unknown error.";
+        };
+    }
+
+    public interface StreamCallback {
+        void onMessage(String message);
+        void onError(String error);
+        void onComplete();
     }
 }

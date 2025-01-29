@@ -11,29 +11,33 @@ public class ClaudeApiDemo {
 
         try {
             AnthropicApiClient claudeApi = new AnthropicApiClient(apiKey, maxTokens, model, temperature);
-            
             Scanner scanner = new Scanner(System.in);
+
             while (true) {
                 System.out.print("Enter your message to Claude (or 'quit' to exit): ");
                 String userInput = scanner.nextLine();
                 if (userInput.equalsIgnoreCase("quit")) {
                     break;
                 }
+
+                claudeApi.sendMessageWithStreaming(userInput, null, new AnthropicApiClient.StreamCallback() {
+                    @Override
+                    public void onMessage(String message) {
+                        System.out.print(message);  // Print in real-time without extra logs
+                    }
                 
-                System.out.print("Do you want to include an image? (yes/no): ");
-                String imageChoice = scanner.nextLine();
+                    @Override
+                    public void onError(String error) {
+                        System.err.println("\nError: " + error);
+                    }
                 
-                String response;
-                if (imageChoice.equalsIgnoreCase("yes")) {
-                    System.out.print("Enter the image path or URL: ");
-                    String imagePath = scanner.nextLine();
-                    response = claudeApi.sendMessageWithImage(userInput, imagePath);
-                } else {
-                    response = claudeApi.sendMessage(userInput);
-                }
+                    @Override
+                    public void onComplete() {
+                        System.out.println("\n\n--- Response complete ---");
+                    }
+                });
                 
-                System.out.println("Claude's response:");
-                System.out.println(response);
+                
             }
             scanner.close();
         } catch (IllegalArgumentException e) {
