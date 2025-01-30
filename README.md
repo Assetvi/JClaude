@@ -1,11 +1,13 @@
-# Anthropic API Client for Java
-This is a Java library for accessing the Anthropic Claude API. It supports sending text messages and images to the Claude AI models, making it easy to integrate advanced AI capabilities into your Java applications.
-## 🚀 Features
-- **Streaming responses** for real-time text generation
-- Send images (JPEG, PNG, GIF, WebP) to the Claude API
-- Handles various response statuses and errors from the API
-- Supports multiple Claude AI models
-- Simple, **easy-to-use CLI demo**
+## 📖 About
+
+This project is a **Java-based API client** for interacting with Anthropic’s Claude models, including **Claude 3.5 and Claude 3**.
+
+### **🌟 Features**
+- **Real-time streaming** – Receive responses as they are generated.
+- **Supports text & image input** – Send messages with optional image context.
+- **Simple integration** – Easily integrate into Java applications.
+- **Customizable** – Set model, temperature, and max tokens.
+- 
 ## Supported Models
 - claude-3-5-sonnet-20240620
 - claude-3-opus-20240229
