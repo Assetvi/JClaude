@@ -7,7 +7,6 @@ This project is a **Java-based API client** for interacting with Anthropic’s C
 - **Supports text & image input** – Send messages with optional image context.
 - **Simple integration** – Easily integrate into Java applications.
 - **Customizable** – Set model, temperature, and max tokens.
-- 
 ## Supported Models
 - claude-3-5-sonnet-20240620
 - claude-3-opus-20240229
